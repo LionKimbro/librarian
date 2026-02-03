@@ -1,0 +1,464 @@
+{
+  "document": {
+    "document_id": "librarian.spec.v0.1",
+    "title": "Librarian Program Specification",
+    "version": "0.1",
+    "status": "implementable",
+    "author": "Lion Kimbro",
+    "purpose": "Defines the Librarian GUI tool for inspecting, editing, saving, and indexing standardized JSON document headers into a central inventory.json file, designed for use with Codex/Claude Code and built on lionscliapp + tkinter."
+  },
+  "spec": {
+    "name": "librarian",
+    "kind": "gui-tool",
+    "domain": "document-inventory",
+    "primary_roles": [
+      "document-header-inspector",
+      "document-header-editor",
+      "document-header-normalizer",
+      "inventory-indexer"
+    ],
+    "depends_on": [
+      "lionscliapp.api.v1",
+      "tkinter",
+      "tkintertester.spec.v0.1"
+    ],
+    "non_goals": [
+      "Parsing or validating any document schema beyond the document header contract",
+      "Editing any part of the document body beyond inserting or replacing the top-level document header object",
+      "Auto-discovery or crawling of folders to find documents",
+      "Automatic indexing on file selection or load",
+      "Implicit saving or autosave of document changes",
+      "Complex metadata tagging, search, or ranking in v0.1",
+      "Handling non-JSON formats",
+      "Network operations"
+    ],
+    "design_principles": [
+      "Non-modal continuous workspace (no interrupting wizards or blocking flows)",
+      "Documents are authoritative about their own identity via an explicit header",
+      "Inventory is a derived projection, not the primary source of truth",
+      "All mutations are explicit via buttons (Save, Index)",
+      "Visible validation and status at all times",
+      "Minimal knobs: indent fixed at 2 for pretty, compressed is a checkbox",
+      "No classes required; single global dict state is acceptable",
+      "Deterministic, testable core logic separated from GUI where practical"
+    ]
+  },
+  "header_contract": {
+    "top_level_key": "document",
+    "required_keys": [
+      "document_id"
+    ],
+    "recommended_keys": [
+      "title",
+      "purpose"
+    ],
+    "allowed_additional_keys": true,
+    "key_types": {
+      "document_id": "string",
+      "title": "string",
+      "purpose": "string"
+    },
+    "normalization": {
+      "when_missing_document_section": "Create an in-memory stub header object and display it in the header editor; do not write to disk until Save is clicked.",
+      "when_missing_required_or_recommended_keys": "Populate missing keys in-memory with empty string values before displaying in header editor.",
+      "document_id_empty_string": "Treated as missing for Save/Index enablement checks.",
+      "preserve_unknown_header_keys": "If document header contains additional keys, keep them as-is when saving and indexing."
+    }
+  },
+  "inventory_contract": {
+    "inventory_filename_default": "inventory.json",
+    "top_level_key": "inventory",
+    "entry_key": "document_id",
+    "entry_fields": {
+      "document_id": {
+        "type": "string",
+        "source": "document_header.document_id",
+        "required": true
+      },
+      "filepath": {
+        "type": "string",
+        "source": "loaded_file_path",
+        "required": true
+      },
+      "title": {
+        "type": "string",
+        "source": "document_header.title",
+        "required": false
+      },
+      "purpose": {
+        "type": "string",
+        "source": "document_header.purpose",
+        "required": false
+      }
+    },
+    "update_policy": {
+      "on_index": "Overwrite the existing entry for document_id with newly derived values.",
+      "no_manual_inventory_editing_in_gui": true,
+      "inventory_is_derived": "Inventory entries are derived from document headers and filepaths at time of indexing."
+    },
+    "inventory_write_format": {
+      "pretty_indent": 2,
+      "compressed": false,
+      "note": "In v0.1, inventory.json is always saved pretty-printed with indent=2 for human readability."
+    }
+  },
+  "cli_contract": {
+    "framework": "lionscliapp",
+    "import": "import lionscliapp as app",
+    "declare_app": {
+      "name": "librarian",
+      "version": "0.1"
+    },
+    "describe_app_short": "Inspect, edit, save, and index JSON document headers into inventory.json.",
+    "projectdir": ".librarian",
+    "declared_keys": [
+      {
+        "key": "path.inventory",
+        "default": "inventory.json",
+        "description": "Path to the inventory.json file."
+      },
+      {
+        "key": "path.jsonedit",
+        "default": "jsonedit",
+        "description": "Command or path used to launch JSONEdit."
+      }
+    ],
+    "commands": [
+      {
+        "name": "",
+        "fn": "gui_main",
+        "description": "Launch the Librarian GUI."
+      }
+    ],
+    "supported_cli_overrides": [
+      "--path.inventory <path>",
+      "--path.jsonedit <cmd_or_path>",
+      "--execroot <path>"
+    ],
+    "options_file_support": true
+  },
+  "gui": {
+    "window": {
+      "title": "Librarian",
+      "min_size": [
+        900,
+        650
+      ],
+      "layout_style": "single-window, multi-pane"
+    },
+    "widgets": {
+      "path_row": {
+        "path_entry": {
+          "type": "Entry",
+          "label": "Path:",
+          "editable": true,
+          "behavior": "User may type/paste/edit a JSON filepath."
+        },
+        "select_button": {
+          "label": "Select",
+          "action": "Open file dialog; set Path Entry to selected filepath; do not auto-load."
+        },
+        "load_button": {
+          "label": "Load",
+          "action": "Load and validate JSON document from Path Entry; populate header editor."
+        }
+      },
+      "indicators_row": {
+        "json_valid_indicator": {
+          "label": "JSON:",
+          "states": [
+            "VALID",
+            "INVALID",
+            "NOT_LOADED"
+          ]
+        },
+        "header_present_indicator": {
+          "label": "Header:",
+          "states": [
+            "PRESENT",
+            "MISSING",
+            "NOT_LOADED"
+          ]
+        }
+      },
+      "status_area": {
+        "type": "Label",
+        "behavior": "Always shows a human-readable status message describing current validity and any errors."
+      },
+      "header_editor": {
+        "type": "Text",
+        "label": "Document Header",
+        "content": "A JSON text blob representing the full document header object only (i.e. the value of the top-level 'document' key, or a stub).",
+        "validation": {
+          "strategy": "timer-based",
+          "interval_ms": 750,
+          "checks": [
+            "Text is valid JSON object",
+            "Required keys exist and are non-empty strings",
+            "Recommended keys exist (may be empty strings but will be warned)"
+          ],
+          "outputs": [
+            "Indicator state updates",
+            "Status message updates",
+            "Enable/disable Save/Index buttons"
+          ]
+        },
+        "editing": "User may freely edit. Librarian never auto-overwrites header text except on Load."
+      },
+      "save_format_controls": {
+        "save_compressed_checkbox": {
+          "label": "Save compressed",
+          "default": false,
+          "meaning": {
+            "checked": "Save document file using compact JSON separators with no indentation.",
+            "unchecked": "Save document file using pretty JSON with indent=2."
+          }
+        }
+      },
+      "action_buttons": {
+        "save_button": {
+          "label": "Save to Document",
+          "enabled_when": [
+            "A document is loaded and parsed",
+            "Header editor JSON is valid object",
+            "Header has required document_id non-empty string"
+          ],
+          "action": "Insert or replace top-level document header and rewrite the document file using selected formatting."
+        },
+        "index_button": {
+          "label": "Index Document",
+          "enabled_when": [
+            "A document is loaded and parsed",
+            "The on-disk document contains a valid header with required document_id (or the in-memory header is valid AND policy permits indexing without saving)"
+          ],
+          "default_policy": "Index reads from disk; therefore indexing should typically occur after Save if user changed the header.",
+          "action": "Load document from disk; extract header; update inventory.json entry for document_id."
+        }
+      },
+      "inventory_view": {
+        "type": "Listbox",
+        "label": "Inventory",
+        "content": "Shows current inventory entries as 'document_id  |  title' (title blank allowed).",
+        "selection_behavior": "Optional in v0.1; may be read-only."
+      },
+      "utility_buttons": {
+        "copy_path": {
+          "label": "Copy Path",
+          "enabled_when": [
+            "Path Entry is non-empty"
+          ],
+          "action": "Copy Path Entry string to clipboard."
+        },
+        "copy_tree": {
+          "label": "Copy Tree",
+          "enabled_when": [
+            "Path Entry is non-empty"
+          ],
+          "action": "Compute a directory tree text for the directory containing the selected document; copy to clipboard."
+        },
+        "copy_tree_compressed": {
+          "label": "Copy Tree (compressed)",
+          "enabled_when": [
+            "Path Entry is non-empty"
+          ],
+          "action": "Compute a compressed directory tree string (depth-limited or flattened) for pasting into LLM prompts; copy to clipboard."
+        },
+        "jsonedit": {
+          "label": "JSONEdit",
+          "enabled_when": [
+            "Path Entry is non-empty"
+          ],
+          "action": "Launch external JSONEdit program on the current path via subprocess."
+        }
+      }
+    }
+  },
+  "file_io_rules": {
+    "load_document": {
+      "input": "Path Entry value",
+      "behavior": [
+        "If file does not exist: set status error; indicators show NOT_LOADED/INVALID as appropriate; do not crash.",
+        "Read bytes, decode as UTF-8 (fallback acceptable if needed), parse JSON.",
+        "Must be a top-level JSON object; otherwise error.",
+        "Record the full parsed document object in memory."
+      ]
+    },
+    "save_document": {
+      "mutation_scope": "Only top-level key 'document' is inserted or replaced; other keys preserved.",
+      "formatting": {
+        "compressed_if_checked": "json.dumps(obj, separators=(',', ':'), ensure_ascii=false)",
+        "pretty_if_unchecked": "json.dumps(obj, indent=2, ensure_ascii=false)"
+      },
+      "newline_policy": "Write with a trailing newline.",
+      "atomic_write": {
+        "required": true,
+        "method": "Write to temp file in same directory then replace original (best-effort on Windows)."
+      }
+    },
+    "index_document": {
+      "reads_from_disk": true,
+      "behavior": [
+        "Load inventory.json (create if missing with {\"inventory\": {}}).",
+        "Load document from disk, parse, extract header.",
+        "Update inventory[document_id] with derived fields.",
+        "Write inventory.json pretty printed indent=2."
+      ]
+    }
+  },
+  "tree_copy_rules": {
+    "root": "Directory containing the selected document file",
+    "copy_tree": {
+      "format": "ascii tree",
+      "include_files": true,
+      "include_dirs": true,
+      "depth_limit": 4,
+      "sort_order": "dirs-first then files alphabetical"
+    },
+    "copy_tree_compressed": {
+      "format": "one-line-per-path or depth-limited condensed tree suitable for LLM prompts",
+      "depth_limit": 3,
+      "max_entries": 200,
+      "ellipsis_behavior": "If more entries exist, append a final line like '... (N more)'."
+    }
+  },
+  "jsonedit_launch": {
+    "command_source": "app.ctx['path.jsonedit']",
+    "invocation": {
+      "windows": "subprocess.Popen([jsonedit_cmd, filepath])",
+      "notes": "If jsonedit_cmd contains spaces or is a full path, it must still be invoked correctly; acceptable to use shell=True if necessary, but prefer list form."
+    },
+    "error_handling": "If launch fails, show status message describing the exception."
+  },
+  "state_model": {
+    "global_state_dict": {
+      "suggested_name": "g",
+      "keys": {
+        "path_entry_value": "string",
+        "loaded_path": "string | null",
+        "loaded_doc_obj": "dict | null",
+        "loaded_doc_json_error": "string | null",
+        "loaded_header_obj": "dict | null",
+        "header_text_last_valid_obj": "dict | null",
+        "header_text_last_error": "string | null",
+        "save_compressed": "bool",
+        "inventory_obj": "dict | null"
+      }
+    },
+    "phases": [
+      "idle",
+      "loaded_valid_json",
+      "loaded_invalid_json"
+    ]
+  },
+  "validation_rules": {
+    "document_json_valid": {
+      "definition": "Loaded file parses as JSON and top-level is an object."
+    },
+    "header_present": {
+      "definition": "Loaded document has a top-level key 'document' whose value is an object."
+    },
+    "header_editor_valid": {
+      "definition": "Header editor text parses to a JSON object."
+    },
+    "header_required_keys": {
+      "document_id": {
+        "must_exist": true,
+        "type": "string",
+        "non_empty": true
+      }
+    },
+    "header_recommended_keys": {
+      "title": {
+        "must_exist_in_editor": true,
+        "may_be_empty": true
+      },
+      "purpose": {
+        "must_exist_in_editor": true,
+        "may_be_empty": true
+      }
+    }
+  },
+  "enablement_policy": {
+    "save_button": "Enabled iff header_editor_valid and document_id is valid and a document is loaded.",
+    "index_button": "Enabled iff on-disk document has valid header with valid document_id (default v0.1 behavior).",
+    "jsonedit_button": "Enabled iff Path Entry non-empty.",
+    "copy_buttons": "Enabled iff Path Entry non-empty."
+  },
+  "errors_and_status_messages": {
+    "must_be_human_readable": true,
+    "examples": [
+      "NOT LOADED. Select a file or paste a path, then click Load.",
+      "LOAD FAILED: file not found.",
+      "LOAD FAILED: invalid JSON at line 12 column 5: Expecting ',' delimiter.",
+      "HEADER MISSING: stub header created (not saved).",
+      "HEADER INVALID: document_id missing or empty.",
+      "READY: header valid. You may Save or Index.",
+      "SAVED: wrote document header to file (pretty).",
+      "SAVED: wrote document header to file (compressed).",
+      "INDEXED: updated inventory.json entry for tkintertester.spec.v0.1",
+      "JSONEdit launch failed: <exception text>"
+    ]
+  },
+  "tests": {
+    "logical_unit_tests": {
+      "scope": "Pure functions; no tkinter",
+      "recommended_test_cases": [
+        "Load valid JSON document with existing document header",
+        "Load valid JSON document missing document header; stub created in memory",
+        "Header editor normalization adds missing keys (title, purpose)",
+        "Saving inserts/replaces document header without altering other keys",
+        "Saving pretty uses indent=2",
+        "Saving compressed uses separators (',', ':')",
+        "Index creates inventory.json if missing",
+        "Index overwrites existing inventory entry for same document_id",
+        "Copy tree functions produce deterministic output given a fixture tree"
+      ]
+    },
+    "tkintertester_integration_tests": {
+      "spec_dependency": "tkintertester.spec.v0.1",
+      "scope": "Instantiate GUI, simulate button callbacks, inspect state and widget contents",
+      "recommended_test_cases": [
+        "Path entry set -> Load -> indicators reflect valid JSON and header present",
+        "Load invalid JSON -> JSON indicator INVALID and status has parse error",
+        "Edit header text to invalid JSON -> header validation shows INVALID within 1s",
+        "Edit header text to missing document_id -> Save disabled, status warns",
+        "Save pretty -> file rewritten with indent=2",
+        "Save compressed -> file rewritten compact",
+        "Index -> inventory.json updated and inventory list refreshed",
+        "JSONEdit button launches subprocess (mocked) with correct args",
+        "Copy Path places correct string into clipboard (may be mocked)"
+      ]
+    }
+  },
+  "implementation_notes": {
+    "recommended_module_layout": [
+      {
+        "file": "librarian/__main__.py",
+        "responsibility": "CLI entrypoint using lionscliapp; calls gui_main."
+      },
+      {
+        "file": "librarian/gui.py",
+        "responsibility": "Tk UI construction, widget wiring, validation loop, actions."
+      },
+      {
+        "file": "librarian/core.py",
+        "responsibility": "Pure logic helpers: header normalize, merge, render JSON, inventory update, tree generation."
+      },
+      {
+        "file": "librarian/tests/test_core.py",
+        "responsibility": "Logical unit tests."
+      },
+      {
+        "file": "librarian/tests/test_gui_tkintertester.py",
+        "responsibility": "Integration tests using tkintertester."
+      }
+    ],
+    "style_constraints": [
+      "No classes required",
+      "Single Tk mainloop",
+      "Timer-driven validation via after()",
+      "Atomic writes for save/index",
+      "All GUI actions should catch exceptions and report status instead of crashing"
+    ]
+  }
+}
