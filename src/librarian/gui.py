@@ -173,6 +173,7 @@ def _build_ui(window: tk.Misc, g: dict[str, Any]) -> None:
             path_var.set(filename)
             g["path_entry_value"] = filename
             _update_copy_buttons_state()
+            on_load()
 
     select_button = tk.Button(top_frame, text="Select", command=on_select)
     select_button.pack(side=tk.LEFT, padx=2)
@@ -259,32 +260,30 @@ def _build_ui(window: tk.Misc, g: dict[str, Any]) -> None:
     )
     save_checkbox.pack(side=tk.LEFT)
 
-    # Action buttons
+    # Action buttons (document actions + utilities)
     action_frame = tk.Frame(left_frame)
     action_frame.pack(side=tk.TOP, fill=tk.X, pady=6)
     save_button = tk.Button(action_frame, text="Save to Document", command=lambda: on_save())
     save_button.pack(side=tk.LEFT, padx=(0, 6))
     index_button = tk.Button(action_frame, text="Index Document", command=lambda: on_index())
-    index_button.pack(side=tk.LEFT)
+    index_button.pack(side=tk.LEFT, padx=(0, 12))
 
     # Inventory view
     tk.Label(right_frame, text="Inventory").pack(side=tk.TOP, anchor="w")
     inventory_list = tk.Listbox(right_frame, width=40)
     inventory_list.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
-    # Utility buttons
-    util_frame = tk.Frame(right_frame)
-    util_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=6)
-    copy_path_button = tk.Button(util_frame, text="Copy Path", command=lambda: on_copy_path())
-    copy_path_button.pack(side=tk.TOP, fill=tk.X, pady=2)
-    copy_tree_button = tk.Button(util_frame, text="Copy Tree", command=lambda: on_copy_tree(False))
-    copy_tree_button.pack(side=tk.TOP, fill=tk.X, pady=2)
+    # Utility buttons (same row as Save/Index)
+    copy_path_button = tk.Button(action_frame, text="Copy Path", command=lambda: on_copy_path())
+    copy_path_button.pack(side=tk.LEFT, padx=(0, 6))
+    copy_tree_button = tk.Button(action_frame, text="Copy JSON", command=lambda: on_copy_tree(False))
+    copy_tree_button.pack(side=tk.LEFT, padx=(0, 6))
     copy_tree_comp_button = tk.Button(
-        util_frame, text="Copy Tree (compressed)", command=lambda: on_copy_tree(True)
+        action_frame, text="Copy JSON (min)", command=lambda: on_copy_tree(True)
     )
-    copy_tree_comp_button.pack(side=tk.TOP, fill=tk.X, pady=2)
-    jsonedit_button = tk.Button(util_frame, text="JSONEdit", command=lambda: on_jsonedit())
-    jsonedit_button.pack(side=tk.TOP, fill=tk.X, pady=2)
+    copy_tree_comp_button.pack(side=tk.LEFT, padx=(0, 6))
+    jsonedit_button = tk.Button(action_frame, text="JSONEdit", command=lambda: on_jsonedit())
+    jsonedit_button.pack(side=tk.LEFT)
 
     g["widgets"] = {
         "path_entry": path_entry,
@@ -308,6 +307,8 @@ def _build_ui(window: tk.Misc, g: dict[str, Any]) -> None:
         "path_var": path_var,
         "save_compressed_var": save_compressed_var,
     }
+
+    g["inventory_ids"] = []
 
     def _on_save_compressed_change() -> None:
         g["save_compressed"] = bool(save_compressed_var.get())
@@ -449,13 +450,17 @@ def _build_ui(window: tk.Misc, g: dict[str, Any]) -> None:
         path = path_var.get().strip()
         if not path:
             return
-        root_dir = Path(path).parent
+        doc_result = core.load_json_file(path)
+        if doc_result.error:
+            _set_status(f"LOAD FAILED: {doc_result.error}.")
+            return
         if compressed:
-            text = core.build_tree_compressed(root_dir)
+            text = json.dumps(doc_result.obj, separators=(",", ":"), ensure_ascii=False) + "\n"
+            _set_status("Copied JSON document to clipboard (compressed).")
         else:
-            text = core.build_tree_text(root_dir)
+            text = json.dumps(doc_result.obj, indent=2, ensure_ascii=False) + "\n"
+            _set_status("Copied JSON document to clipboard.")
         pyperclip.copy(text)
-        _set_status("Copied directory tree to clipboard.")
 
     def on_jsonedit() -> None:
         path = path_var.get().strip()
@@ -497,13 +502,35 @@ def _build_ui(window: tk.Misc, g: dict[str, Any]) -> None:
         g["inventory_obj"] = inv_obj
         inventory_list.delete(0, tk.END)
         entries = inv_obj.get(core.INVENTORY_KEY, {})
+        g["inventory_ids"] = []
         for doc_id in sorted(entries.keys()):
-            title = entries[doc_id].get("title", "")
-            inventory_list.insert(tk.END, f"{doc_id}  |  {title}")
+            inventory_list.insert(tk.END, f"{doc_id}")
+            g["inventory_ids"].append(doc_id)
+
+    def _on_inventory_select(_event=None) -> None:
+        selection = inventory_list.curselection()
+        if not selection:
+            return
+        idx = selection[0]
+        if idx >= len(g["inventory_ids"]):
+            return
+        doc_id = g["inventory_ids"][idx]
+        entry = g["inventory_obj"].get(core.INVENTORY_KEY, {}).get(doc_id)
+        if not entry:
+            return
+        filepath = entry.get("filepath")
+        if not filepath:
+            _set_status("LOAD FAILED: inventory entry missing filepath.")
+            return
+        path_var.set(filepath)
+        g["path_entry_value"] = filepath
+        _update_copy_buttons_state()
+        on_load()
 
     path_var.trace_add("write", lambda *_: _update_copy_buttons_state())
 
     _update_copy_buttons_state()
     _update_action_buttons_state()
     _refresh_inventory_list()
+    inventory_list.bind("<<ListboxSelect>>", _on_inventory_select)
     _validate_header_loop()

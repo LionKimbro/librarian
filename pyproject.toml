@@ -14,6 +14,9 @@ dependencies = [
   "pyperclip",
 ]
 
+[project.scripts]
+librarian = "librarian.__main__:main"
+
 [tool.setuptools]
 package-dir = {"" = "src"}
 

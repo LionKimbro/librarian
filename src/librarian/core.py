@@ -114,9 +114,12 @@ def atomic_write_text(path: str | Path, text: str) -> None:
 
 def update_document_header(doc_obj: dict[str, Any], header_obj: dict[str, Any]) -> dict[str, Any]:
     """Insert or replace the top-level document header in a document object."""
-    doc_obj = dict(doc_obj)
-    doc_obj[DOCUMENT_KEY] = header_obj
-    return doc_obj
+    new_obj: dict[str, Any] = {DOCUMENT_KEY: header_obj}
+    for key, value in doc_obj.items():
+        if key == DOCUMENT_KEY:
+            continue
+        new_obj[key] = value
+    return new_obj
 
 
 def ensure_inventory_obj(inv_obj: dict[str, Any] | None) -> dict[str, Any]:

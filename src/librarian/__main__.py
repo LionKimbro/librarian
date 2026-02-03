@@ -20,6 +20,10 @@ def _declare_app():
     app.describe_cmd("", "Launch the Librarian GUI.")
 
 
-if __name__ == "__main__":
+def main() -> None:
     _declare_app()
     app.main()
+
+
+if __name__ == "__main__":
+    main()

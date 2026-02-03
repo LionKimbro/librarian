@@ -57,11 +57,13 @@ def test_format_json_pretty_and_compact():
 
 
 def test_update_document_header():
-    doc = {"x": 1}
+    doc = {"x": 1, "y": 2}
     header = {"document_id": "d"}
     updated = core.update_document_header(doc, header)
     assert updated["x"] == 1
     assert updated["document"] == header
+    assert list(updated.keys())[0] == "document"
+    assert list(updated.keys())[1:] == ["x", "y"]
 
 
 def test_update_inventory_entry():
