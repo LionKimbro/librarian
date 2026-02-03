@@ -23,6 +23,10 @@ except Exception:  # pragma: no cover - optional for direct execution
 
 VALIDATION_INTERVAL_MS = 750
 
+COLOR_GOOD = "#1a7f37"
+COLOR_BAD = "#d1242f"
+COLOR_NEUTRAL = "#0969da"
+
 APP_G: dict[str, Any] | None = None
 APP_WINDOW: tk.Misc | None = None
 
@@ -146,11 +150,27 @@ def _build_ui(window: tk.Misc, g: dict[str, Any]) -> None:
     path_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=6)
 
     def _set_indicators(json_state: str, header_state: str) -> None:
-        json_indicator.config(text=json_state)
-        header_indicator.config(text=header_state)
+        def _color_for_state(state: str) -> str:
+            if state in ("VALID", "PRESENT"):
+                return COLOR_GOOD
+            if state in ("INVALID",):
+                return COLOR_BAD
+            return COLOR_NEUTRAL
+
+        json_indicator.config(text=json_state, fg=_color_for_state(json_state))
+        header_indicator.config(text=header_state, fg=_color_for_state(header_state))
 
     def _set_status(text: str) -> None:
+        def _status_color(msg: str) -> str:
+            upper = msg.upper()
+            if "FAILED" in upper or "INVALID" in upper:
+                return COLOR_BAD
+            if upper.startswith("READY") or upper.startswith("SAVED") or upper.startswith("INDEXED"):
+                return COLOR_GOOD
+            return COLOR_NEUTRAL
+
         status_var.set(text)
+        status_label.config(fg=_status_color(text))
 
     def _set_header_text(text: str) -> None:
         header_text.delete("1.0", tk.END)
@@ -241,7 +261,9 @@ def _build_ui(window: tk.Misc, g: dict[str, Any]) -> None:
 
     # Status
     status_var = tk.StringVar(value="NOT LOADED. Select a file or paste a path, then click Load.")
-    status_label = tk.Label(status_frame, textvariable=status_var, anchor="w", justify=tk.LEFT)
+    status_label = tk.Label(
+        status_frame, textvariable=status_var, anchor="w", justify=tk.LEFT, fg=COLOR_NEUTRAL
+    )
     status_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
 
     # Header editor
