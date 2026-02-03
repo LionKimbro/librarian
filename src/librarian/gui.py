@@ -11,6 +11,7 @@ from typing import Any
 
 import pyperclip
 import tkinter as tk
+from tkinter import ttk
 from tkinter import filedialog
 
 from . import core
@@ -64,7 +65,7 @@ def create_app(window: tk.Misc, root: tk.Misc | None = None) -> dict[str, Any]:
     g["root"] = root or window
     g["window"] = window
     g["path_inventory"] = _ctx_value("path.inventory", "inventory.json")
-    g["path_jsonedit"] = _ctx_value("path.jsonedit", "jsonedit")
+    g["path_jsonedit"] = _ctx_value("invoke.jsonedit", "jsonedit")
     _build_ui(window, g)
     return g
 
@@ -135,14 +136,14 @@ def _build_ui(window: tk.Misc, g: dict[str, Any]) -> None:
     status_frame = tk.Frame(window)
     status_frame.pack(side=tk.TOP, fill=tk.X, padx=8, pady=2)
 
-    body_frame = tk.Frame(window)
-    body_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=8, pady=6)
+    body_pane = ttk.PanedWindow(window, orient="horizontal")
+    body_pane.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=8, pady=6)
 
-    left_frame = tk.Frame(body_frame)
-    left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 8))
+    left_frame = tk.Frame(body_pane)
+    right_frame = tk.Frame(body_pane, width=200)
 
-    right_frame = tk.Frame(body_frame, width=200)
-    right_frame.pack(side=tk.RIGHT, fill=tk.Y)
+    body_pane.add(left_frame, weight=3)
+    body_pane.add(right_frame, weight=1)
 
     # Path row
     tk.Label(top_frame, text="Path:").pack(side=tk.LEFT)
@@ -295,6 +296,9 @@ def _build_ui(window: tk.Misc, g: dict[str, Any]) -> None:
     inventory_list = tk.Listbox(right_frame, width=40)
     inventory_list.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
+    inventory_buttons = tk.Frame(right_frame)
+    inventory_buttons.pack(side=tk.TOP, fill=tk.X, pady=6)
+
     # Utility buttons (same row as Save/Index)
     copy_path_button = tk.Button(action_frame, text="Copy Path", command=lambda: on_copy_path())
     copy_path_button.pack(side=tk.LEFT, padx=(0, 6))
@@ -306,6 +310,27 @@ def _build_ui(window: tk.Misc, g: dict[str, Any]) -> None:
     copy_tree_comp_button.pack(side=tk.LEFT, padx=(0, 6))
     jsonedit_button = tk.Button(action_frame, text="JSONEdit", command=lambda: on_jsonedit())
     jsonedit_button.pack(side=tk.LEFT)
+
+    inv_reload_button = tk.Button(
+        inventory_buttons, text="Reload", command=lambda: on_inventory_reload()
+    )
+    inv_reload_button.pack(side=tk.LEFT, padx=(0, 6))
+    inv_copy_path_button = tk.Button(
+        inventory_buttons, text="Copy Path", command=lambda: on_inventory_copy_path()
+    )
+    inv_copy_path_button.pack(side=tk.LEFT, padx=(0, 6))
+    inv_copy_json_button = tk.Button(
+        inventory_buttons, text="Copy JSON", command=lambda: on_inventory_copy_json(False)
+    )
+    inv_copy_json_button.pack(side=tk.LEFT, padx=(0, 6))
+    inv_copy_json_min_button = tk.Button(
+        inventory_buttons, text="(min)", command=lambda: on_inventory_copy_json(True)
+    )
+    inv_copy_json_min_button.pack(side=tk.LEFT, padx=(0, 6))
+    inv_treeedit_button = tk.Button(
+        inventory_buttons, text="TreeEdit", command=lambda: on_inventory_treeedit()
+    )
+    inv_treeedit_button.pack(side=tk.LEFT)
 
     g["widgets"] = {
         "path_entry": path_entry,
@@ -323,6 +348,11 @@ def _build_ui(window: tk.Misc, g: dict[str, Any]) -> None:
         "copy_tree_button": copy_tree_button,
         "copy_tree_comp_button": copy_tree_comp_button,
         "jsonedit_button": jsonedit_button,
+        "inv_reload_button": inv_reload_button,
+        "inv_copy_path_button": inv_copy_path_button,
+        "inv_copy_json_button": inv_copy_json_button,
+        "inv_copy_json_min_button": inv_copy_json_min_button,
+        "inv_treeedit_button": inv_treeedit_button,
     }
 
     g["vars"] = {
@@ -417,6 +447,10 @@ def _build_ui(window: tk.Misc, g: dict[str, Any]) -> None:
             _set_status("SAVED: wrote document header to file (pretty).")
         _update_action_buttons_state()
 
+    def _bind_shortcuts() -> None:
+        g["root"].bind_all("<Control-s>", lambda _e: on_save())
+        g["root"].bind_all("<Control-S>", lambda _e: on_save())
+
     def on_index() -> None:
         if not g["loaded_path"]:
             _set_status("NOT LOADED. Select a file or paste a path, then click Load.")
@@ -510,6 +544,50 @@ def _build_ui(window: tk.Misc, g: dict[str, Any]) -> None:
             except Exception as exc:
                 _set_status(f"JSONEdit launch failed: {exc}")
 
+    def on_inventory_copy_path() -> None:
+        pyperclip.copy(str(path_inventory))
+        _set_status("Copied inventory path to clipboard.")
+
+    def on_inventory_reload() -> None:
+        _refresh_inventory_list()
+        _set_status("Reloaded inventory.")
+
+    def on_inventory_copy_json(compressed: bool) -> None:
+        inv_result = core.load_json_file(path_inventory)
+        if inv_result.error:
+            _set_status(f"LOAD FAILED: {inv_result.error}.")
+            return
+        if compressed:
+            text = json.dumps(inv_result.obj, separators=(",", ":"), ensure_ascii=False) + "\n"
+            _set_status("Copied inventory JSON to clipboard (compressed).")
+        else:
+            text = json.dumps(inv_result.obj, indent=2, ensure_ascii=False) + "\n"
+            _set_status("Copied inventory JSON to clipboard.")
+        pyperclip.copy(text)
+
+    def on_inventory_treeedit() -> None:
+        cmd = path_jsonedit
+        if isinstance(cmd, Path):
+            cmd = str(cmd)
+        try:
+            if isinstance(cmd, str):
+                args = shlex.split(cmd) if " " in cmd else [cmd]
+                if len(args) == 1:
+                    resolved = shutil.which(args[0])
+                    if resolved:
+                        args[0] = resolved
+            else:
+                args = list(cmd)
+            args.append(str(path_inventory))
+            subprocess.Popen(args)
+            _set_status("Launched JSONEdit for inventory.")
+        except Exception:
+            try:
+                subprocess.Popen(f'"{cmd}" "{path_inventory}"', shell=True)
+                _set_status("Launched JSONEdit for inventory.")
+            except Exception as exc:
+                _set_status(f"JSONEdit launch failed: {exc}")
+
     def _refresh_inventory_list() -> None:
         inv_path = Path(path_inventory)
         inv_result = core.load_json_file(inv_path)
@@ -525,7 +603,7 @@ def _build_ui(window: tk.Misc, g: dict[str, Any]) -> None:
         inventory_list.delete(0, tk.END)
         entries = inv_obj.get(core.INVENTORY_KEY, {})
         g["inventory_ids"] = []
-        for doc_id in sorted(entries.keys()):
+        for doc_id in entries.keys():
             inventory_list.insert(tk.END, f"{doc_id}")
             g["inventory_ids"].append(doc_id)
 
@@ -555,4 +633,5 @@ def _build_ui(window: tk.Misc, g: dict[str, Any]) -> None:
     _update_action_buttons_state()
     _refresh_inventory_list()
     inventory_list.bind("<<ListboxSelect>>", _on_inventory_select)
+    _bind_shortcuts()
     _validate_header_loop()

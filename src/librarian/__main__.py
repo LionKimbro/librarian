@@ -13,8 +13,8 @@ def _declare_app():
     app.declare_key("path.inventory", "inventory.json")
     app.describe_key("path.inventory", "Path to the inventory.json file.")
 
-    app.declare_key("path.jsonedit", "jsonedit")
-    app.describe_key("path.jsonedit", "Command or path used to launch JSONEdit.")
+    app.declare_key("invoke.jsonedit", "jsonedit")
+    app.describe_key("invoke.jsonedit", "Command or path used to launch JSONEdit.")
 
     app.declare_cmd("", gui_main)
     app.describe_cmd("", "Launch the Librarian GUI.")
