@@ -57,6 +57,9 @@ def _create_state() -> dict[str, Any]:
         "save_compressed": False,
         "inventory_obj": None,
         "loaded_disk_header_valid": False,
+        "indicator_json": "NOT_LOADED",
+        "indicator_header": "NOT_LOADED",
+        "status_message": "NOT LOADED. Select a file or paste a path, then click Load.",
     }
 
 
@@ -150,110 +153,6 @@ def _build_ui(window: tk.Misc, g: dict[str, Any]) -> None:
     path_entry = tk.Entry(top_frame, textvariable=path_var, width=80)
     path_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=6)
 
-    def _set_indicators(json_state: str, header_state: str) -> None:
-        def _color_for_state(state: str) -> str:
-            if state in ("VALID", "PRESENT"):
-                return COLOR_GOOD
-            if state in ("INVALID",):
-                return COLOR_BAD
-            return COLOR_NEUTRAL
-
-        json_indicator.config(text=json_state, fg=_color_for_state(json_state))
-        header_indicator.config(text=header_state, fg=_color_for_state(header_state))
-
-    def _set_status(text: str) -> None:
-        def _status_color(msg: str) -> str:
-            upper = msg.upper()
-            if "FAILED" in upper or "INVALID" in upper:
-                return COLOR_BAD
-            if upper.startswith("READY") or upper.startswith("SAVED") or upper.startswith("INDEXED"):
-                return COLOR_GOOD
-            return COLOR_NEUTRAL
-
-        status_var.set(text)
-        status_label.config(fg=_status_color(text))
-
-    def _set_header_text(text: str) -> None:
-        header_text.delete("1.0", tk.END)
-        header_text.insert("1.0", text)
-
-    def _update_copy_buttons_state() -> None:
-        enabled = bool(g.get("loaded_path"))
-        state = tk.NORMAL if enabled else tk.DISABLED
-        copy_path_button.config(state=state)
-        copy_tree_button.config(state=state)
-        copy_tree_comp_button.config(state=state)
-        jsonedit_button.config(state=state)
-
-    def on_select() -> None:
-        filename = filedialog.askopenfilename(
-            title="Select JSON document",
-            filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
-        )
-        if filename:
-            path_var.set(filename)
-            g["path_entry_value"] = filename
-            _update_copy_buttons_state()
-            on_load()
-
-    select_button = tk.Button(top_frame, text="Select", command=on_select)
-    select_button.pack(side=tk.LEFT, padx=2)
-
-    def on_load() -> None:
-        path = path_var.get().strip()
-        g["path_entry_value"] = path
-        if not path:
-            _set_status("NOT LOADED. Select a file or paste a path, then click Load.")
-            _set_indicators("NOT_LOADED", "NOT_LOADED")
-            return
-        result = core.load_json_file(path)
-        if result.error:
-            g["loaded_doc_obj"] = None
-            g["loaded_path"] = None
-            g["loaded_doc_json_error"] = result.error
-            loaded_var.set("Loaded: (none)")
-            _set_indicators("INVALID", "NOT_LOADED")
-            _set_status(f"LOAD FAILED: {result.error}.")
-            return
-        top_level = core.ensure_top_level_object(result.obj)
-        if top_level.error:
-            g["loaded_doc_obj"] = None
-            g["loaded_path"] = None
-            g["loaded_doc_json_error"] = top_level.error
-            loaded_var.set("Loaded: (none)")
-            _set_indicators("INVALID", "NOT_LOADED")
-            _set_status(f"LOAD FAILED: {top_level.error}.")
-            return
-
-        g["loaded_doc_obj"] = top_level.obj
-        g["loaded_path"] = path
-        g["loaded_doc_json_error"] = None
-        loaded_var.set(f"Loaded: {Path(path).name}")
-
-        header = core.extract_header(top_level.obj)
-        if header is None:
-            header = core.normalize_header(None)
-            _set_indicators("VALID", "MISSING")
-            _set_status("HEADER MISSING: stub header created (not saved).")
-            g["loaded_disk_header_valid"] = False
-        else:
-            header = core.normalize_header(header)
-            _set_indicators("VALID", "PRESENT")
-            header_valid = core.validate_header_required(header)
-            g["loaded_disk_header_valid"] = header_valid.error is None
-            if header_valid.error:
-                _set_status("HEADER INVALID: document_id missing or empty.")
-            else:
-                _set_status("READY: header valid. You may Save or Index.")
-
-        g["loaded_header_obj"] = header
-        _set_header_text(json.dumps(header, indent=2, ensure_ascii=False))
-        _refresh_inventory_list()
-        _update_action_buttons_state()
-
-    load_button = tk.Button(top_frame, text="Load", command=on_load)
-    load_button.pack(side=tk.LEFT, padx=2)
-
     # Indicators row
     tk.Label(indicators_frame, text="JSON:").pack(side=tk.LEFT)
     json_indicator = tk.Label(indicators_frame, text="NOT_LOADED", width=10, anchor="w")
@@ -264,7 +163,7 @@ def _build_ui(window: tk.Misc, g: dict[str, Any]) -> None:
     header_indicator.pack(side=tk.LEFT, padx=(0, 10))
 
     # Status
-    status_var = tk.StringVar(value="NOT LOADED. Select a file or paste a path, then click Load.")
+    status_var = tk.StringVar(value=g["status_message"])
     status_label = tk.Label(
         status_frame, textvariable=status_var, anchor="w", justify=tk.LEFT, fg=COLOR_NEUTRAL
     )
@@ -340,8 +239,8 @@ def _build_ui(window: tk.Misc, g: dict[str, Any]) -> None:
 
     g["widgets"] = {
         "path_entry": path_entry,
-        "select_button": select_button,
-        "load_button": load_button,
+        "select_button": None,
+        "load_button": None,
         "json_indicator": json_indicator,
         "header_indicator": header_indicator,
         "status_var": status_var,
@@ -369,55 +268,38 @@ def _build_ui(window: tk.Misc, g: dict[str, Any]) -> None:
 
     g["inventory_ids"] = []
 
-    def _on_save_compressed_change() -> None:
-        g["save_compressed"] = bool(save_compressed_var.get())
+    def _color_for_state(state: str) -> str:
+        if state in ("VALID", "PRESENT"):
+            return COLOR_GOOD
+        if state in ("INVALID",):
+            return COLOR_BAD
+        return COLOR_NEUTRAL
 
-    def _validate_header_editor() -> None:
-        text = header_text.get("1.0", tk.END).strip()
-        if not text:
-            g["header_text_last_valid_obj"] = None
-            g["header_text_last_error"] = "empty"
-            _update_action_buttons_state()
-            return
-        parsed = core.parse_json_text(text)
-        if parsed.error:
-            g["header_text_last_valid_obj"] = None
-            g["header_text_last_error"] = parsed.error
-            _set_status(f"HEADER INVALID: {parsed.error}.")
-            _update_action_buttons_state()
-            return
-        if not isinstance(parsed.obj, dict):
-            g["header_text_last_valid_obj"] = None
-            g["header_text_last_error"] = "header must be a JSON object"
-            _set_status("HEADER INVALID: header must be a JSON object.")
-            _update_action_buttons_state()
-            return
+    def _status_color(msg: str) -> str:
+        upper = msg.upper()
+        if "FAILED" in upper or "INVALID" in upper:
+            return COLOR_BAD
+        if upper.startswith("READY") or upper.startswith("SAVED") or upper.startswith("INDEXED"):
+            return COLOR_GOOD
+        return COLOR_NEUTRAL
 
-        g["header_text_last_valid_obj"] = parsed.obj
-        g["header_text_last_error"] = None
+    def _render_indicators() -> None:
+        json_state = g["indicator_json"]
+        header_state = g["indicator_header"]
+        json_indicator.config(text=json_state, fg=_color_for_state(json_state))
+        header_indicator.config(text=header_state, fg=_color_for_state(header_state))
 
-        required = core.validate_header_required(parsed.obj)
-        if required.error:
-            _set_status("HEADER INVALID: document_id missing or empty.")
+    def _render_status() -> None:
+        status_var.set(g["status_message"])
+        status_label.config(fg=_status_color(g["status_message"]))
+
+    def _render_loaded_label() -> None:
+        if g.get("loaded_path"):
+            loaded_var.set(f"Loaded: {Path(g['loaded_path']).name}")
         else:
-            missing_recommended = [
-                key for key in core.RECOMMENDED_HEADER_KEYS if key not in parsed.obj
-            ]
-            if missing_recommended:
-                _set_status("READY: header valid. Recommended keys missing.")
-            else:
-                _set_status("READY: header valid. You may Save or Index.")
+            loaded_var.set("Loaded: (none)")
 
-        _update_action_buttons_state()
-
-    def _validate_header_loop() -> None:
-        # Stop validation loop if window has been destroyed.
-        if not header_text.winfo_exists():
-            return
-        _validate_header_editor()
-        g["validation_after_id"] = g["root"].after(VALIDATION_INTERVAL_MS, _validate_header_loop)
-
-    def _update_action_buttons_state() -> None:
+    def _render_enablement() -> None:
         header_valid = g["header_text_last_valid_obj"] is not None
         doc_id_ok = False
         if header_valid:
@@ -430,17 +312,175 @@ def _build_ui(window: tk.Misc, g: dict[str, Any]) -> None:
         index_enabled = bool(g["loaded_doc_obj"]) and g["loaded_disk_header_valid"]
         index_button.config(state=tk.NORMAL if index_enabled else tk.DISABLED)
 
+        doc_tools_enabled = bool(g.get("loaded_path"))
+        state = tk.NORMAL if doc_tools_enabled else tk.DISABLED
+        copy_path_button.config(state=state)
+        copy_tree_button.config(state=state)
+        copy_tree_comp_button.config(state=state)
+        jsonedit_button.config(state=state)
+
+    def _render_inventory_list() -> None:
+        inv_obj = g.get("inventory_obj")
+        if inv_obj is None:
+            return
+        inventory_list.delete(0, tk.END)
+        entries = inv_obj.get(core.INVENTORY_KEY, {})
+        g["inventory_ids"] = []
+        for doc_id in entries.keys():
+            inventory_list.insert(tk.END, f"{doc_id}")
+            g["inventory_ids"].append(doc_id)
+
+    def render() -> None:
+        _render_indicators()
+        _render_status()
+        _render_loaded_label()
+        _render_enablement()
+        _render_inventory_list()
+
+    def set_status(text: str) -> None:
+        g["status_message"] = text
+        _render_status()
+
+    def set_indicators(json_state: str, header_state: str) -> None:
+        g["indicator_json"] = json_state
+        g["indicator_header"] = header_state
+        _render_indicators()
+
+    def _set_header_text(text: str) -> None:
+        header_text.delete("1.0", tk.END)
+        header_text.insert("1.0", text)
+
+    def _on_save_compressed_change() -> None:
+        g["save_compressed"] = bool(save_compressed_var.get())
+
+    def on_select() -> None:
+        filename = filedialog.askopenfilename(
+            title="Select JSON document",
+            filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
+        )
+        if filename:
+            path_var.set(filename)
+            g["path_entry_value"] = filename
+            on_load()
+
+    select_button = tk.Button(top_frame, text="Select", command=on_select)
+    select_button.pack(side=tk.LEFT, padx=2)
+    g["widgets"]["select_button"] = select_button
+
+    def on_load() -> None:
+        path = path_var.get().strip()
+        g["path_entry_value"] = path
+        if not path:
+            set_status("NOT LOADED. Select a file or paste a path, then click Load.")
+            set_indicators("NOT_LOADED", "NOT_LOADED")
+            g["loaded_doc_obj"] = None
+            g["loaded_path"] = None
+            g["loaded_doc_json_error"] = None
+            render()
+            return
+        result = core.load_json_file(path)
+        if result.error:
+            g["loaded_doc_obj"] = None
+            g["loaded_path"] = None
+            g["loaded_doc_json_error"] = result.error
+            set_indicators("INVALID", "NOT_LOADED")
+            set_status(f"LOAD FAILED: {result.error}.")
+            render()
+            return
+        top_level = core.ensure_top_level_object(result.obj)
+        if top_level.error:
+            g["loaded_doc_obj"] = None
+            g["loaded_path"] = None
+            g["loaded_doc_json_error"] = top_level.error
+            set_indicators("INVALID", "NOT_LOADED")
+            set_status(f"LOAD FAILED: {top_level.error}.")
+            render()
+            return
+
+        g["loaded_doc_obj"] = top_level.obj
+        g["loaded_path"] = path
+        g["loaded_doc_json_error"] = None
+
+        header = core.extract_header(top_level.obj)
+        if header is None:
+            header = core.normalize_header(None)
+            set_indicators("VALID", "MISSING")
+            set_status("HEADER MISSING: stub header created (not saved).")
+            g["loaded_disk_header_valid"] = False
+        else:
+            header = core.normalize_header(header)
+            set_indicators("VALID", "PRESENT")
+            header_valid = core.validate_header_required(header)
+            g["loaded_disk_header_valid"] = header_valid.error is None
+            if header_valid.error:
+                set_status("HEADER INVALID: document_id missing or empty.")
+            else:
+                set_status("READY: header valid. You may Save or Index.")
+
+        g["loaded_header_obj"] = header
+        _set_header_text(json.dumps(header, indent=2, ensure_ascii=False))
+        _refresh_inventory_list()
+        render()
+
+    load_button = tk.Button(top_frame, text="Load", command=on_load)
+    load_button.pack(side=tk.LEFT, padx=2)
+    g["widgets"]["load_button"] = load_button
+
+    def _validate_header_editor() -> None:
+        text = header_text.get("1.0", tk.END).strip()
+        if not text:
+            g["header_text_last_valid_obj"] = None
+            g["header_text_last_error"] = "empty"
+            _render_enablement()
+            return
+        parsed = core.parse_json_text(text)
+        if parsed.error:
+            g["header_text_last_valid_obj"] = None
+            g["header_text_last_error"] = parsed.error
+            set_status(f"HEADER INVALID: {parsed.error}.")
+            _render_enablement()
+            return
+        if not isinstance(parsed.obj, dict):
+            g["header_text_last_valid_obj"] = None
+            g["header_text_last_error"] = "header must be a JSON object"
+            set_status("HEADER INVALID: header must be a JSON object.")
+            _render_enablement()
+            return
+
+        g["header_text_last_valid_obj"] = parsed.obj
+        g["header_text_last_error"] = None
+
+        required = core.validate_header_required(parsed.obj)
+        if required.error:
+            set_status("HEADER INVALID: document_id missing or empty.")
+        else:
+            missing_recommended = [
+                key for key in core.RECOMMENDED_HEADER_KEYS if key not in parsed.obj
+            ]
+            if missing_recommended:
+                set_status("READY: header valid. Recommended keys missing.")
+            else:
+                set_status("READY: header valid. You may Save or Index.")
+
+        _render_enablement()
+
+    def _validate_header_loop() -> None:
+        if not header_text.winfo_exists():
+            return
+        _validate_header_editor()
+        g["validation_after_id"] = g["root"].after(VALIDATION_INTERVAL_MS, _validate_header_loop)
+
     def on_save() -> None:
         if not g["loaded_doc_obj"] or not g["loaded_path"]:
-            _set_status("NOT LOADED. Select a file or paste a path, then click Load.")
+            set_status("NOT LOADED. Select a file or paste a path, then click Load.")
             return
         header_obj = g["header_text_last_valid_obj"]
         if header_obj is None:
-            _set_status("HEADER INVALID: cannot save.")
+            set_status("HEADER INVALID: cannot save.")
             return
         required = core.validate_header_required(header_obj)
         if required.error:
-            _set_status("HEADER INVALID: document_id missing or empty.")
+            set_status("HEADER INVALID: document_id missing or empty.")
             return
 
         updated_doc = core.update_document_header(g["loaded_doc_obj"], header_obj)
@@ -449,31 +489,31 @@ def _build_ui(window: tk.Misc, g: dict[str, Any]) -> None:
         g["loaded_doc_obj"] = updated_doc
         g["loaded_disk_header_valid"] = True
         if save_compressed_var.get():
-            _set_status("SAVED: wrote document header to file (compressed).")
+            set_status("SAVED: wrote document header to file (compressed).")
         else:
-            _set_status("SAVED: wrote document header to file (pretty).")
-        _update_action_buttons_state()
+            set_status("SAVED: wrote document header to file (pretty).")
+        _render_enablement()
 
     def on_index() -> None:
         if not g["loaded_path"]:
-            _set_status("NOT LOADED. Select a file or paste a path, then click Load.")
+            set_status("NOT LOADED. Select a file or paste a path, then click Load.")
             return
         doc_result = core.load_json_file(g["loaded_path"])
         if doc_result.error:
-            _set_status(f"LOAD FAILED: {doc_result.error}.")
+            set_status(f"LOAD FAILED: {doc_result.error}.")
             return
         top_level = core.ensure_top_level_object(doc_result.obj)
         if top_level.error:
-            _set_status(f"LOAD FAILED: {top_level.error}.")
+            set_status(f"LOAD FAILED: {top_level.error}.")
             return
         header = core.extract_header(top_level.obj)
         if header is None:
-            _set_status("HEADER INVALID: document_id missing or empty.")
+            set_status("HEADER INVALID: document_id missing or empty.")
             return
         header = core.normalize_header(header)
         required = core.validate_header_required(header)
         if required.error:
-            _set_status("HEADER INVALID: document_id missing or empty.")
+            set_status("HEADER INVALID: document_id missing or empty.")
             return
 
         inv_path = Path(path_inventory)
@@ -495,36 +535,33 @@ def _build_ui(window: tk.Misc, g: dict[str, Any]) -> None:
         inv_text = core.format_json(inv_obj, compressed=False)
         core.atomic_write_text(inv_path, inv_text)
         g["inventory_obj"] = inv_obj
-        _refresh_inventory_list()
-        _set_status(f"INDEXED: updated inventory.json entry for {header['document_id']}")
+        _render_inventory_list()
+        set_status(f"INDEXED: updated inventory.json entry for {header['document_id']}")
 
     def on_copy_path() -> None:
-        path = path_var.get().strip()
+        path = g.get("loaded_path")
         if not path:
             return
-        pyperclip.copy(path)
-        _set_status("Copied path to clipboard.")
+        pyperclip.copy(str(path))
+        set_status("Copied path to clipboard.")
 
     def on_copy_tree(compressed: bool) -> None:
-        path = path_var.get().strip()
+        path = g.get("loaded_path")
         if not path:
             return
         doc_result = core.load_json_file(path)
         if doc_result.error:
-            _set_status(f"LOAD FAILED: {doc_result.error}.")
+            set_status(f"LOAD FAILED: {doc_result.error}.")
             return
         if compressed:
             text = json.dumps(doc_result.obj, separators=(",", ":"), ensure_ascii=False) + "\n"
-            _set_status("Copied JSON document to clipboard (compressed).")
+            set_status("Copied JSON document to clipboard (compressed).")
         else:
             text = json.dumps(doc_result.obj, indent=2, ensure_ascii=False) + "\n"
-            _set_status("Copied JSON document to clipboard.")
+            set_status("Copied JSON document to clipboard.")
         pyperclip.copy(text)
 
-    def on_jsonedit() -> None:
-        path = path_var.get().strip()
-        if not path:
-            return
+    def _launch_jsonedit(target_path: str, status_ok: str) -> None:
         cmd = path_jsonedit
         if isinstance(cmd, Path):
             cmd = str(cmd)
@@ -537,78 +574,57 @@ def _build_ui(window: tk.Misc, g: dict[str, Any]) -> None:
                         args[0] = resolved
             else:
                 args = list(cmd)
-            args.append(path)
+            args.append(target_path)
             subprocess.Popen(args)
-            _set_status("Launched JSONEdit.")
+            set_status(status_ok)
         except Exception:
             try:
-                subprocess.Popen(f'"{cmd}" "{path}"', shell=True)
-                _set_status("Launched JSONEdit.")
+                subprocess.Popen(f'"{cmd}" "{target_path}"', shell=True)
+                set_status(status_ok)
             except Exception as exc:
-                _set_status(f"JSONEdit launch failed: {exc}")
+                set_status(f"JSONEdit launch failed: {exc}")
+
+    def on_jsonedit() -> None:
+        path = g.get("loaded_path")
+        if not path:
+            return
+        _launch_jsonedit(str(path), "Launched JSONEdit.")
 
     def on_inventory_copy_path() -> None:
         pyperclip.copy(str(path_inventory))
-        _set_status("Copied inventory path to clipboard.")
+        set_status("Copied inventory path to clipboard.")
 
     def on_inventory_reload() -> None:
         _refresh_inventory_list()
-        _set_status("Reloaded inventory.")
+        set_status("Reloaded inventory.")
 
     def on_inventory_copy_json(compressed: bool) -> None:
         inv_result = core.load_json_file(path_inventory)
         if inv_result.error:
-            _set_status(f"LOAD FAILED: {inv_result.error}.")
+            set_status(f"LOAD FAILED: {inv_result.error}.")
             return
         if compressed:
             text = json.dumps(inv_result.obj, separators=(",", ":"), ensure_ascii=False) + "\n"
-            _set_status("Copied inventory JSON to clipboard (compressed).")
+            set_status("Copied inventory JSON to clipboard (compressed).")
         else:
             text = json.dumps(inv_result.obj, indent=2, ensure_ascii=False) + "\n"
-            _set_status("Copied inventory JSON to clipboard.")
+            set_status("Copied inventory JSON to clipboard.")
         pyperclip.copy(text)
 
     def on_inventory_treeedit() -> None:
-        cmd = path_jsonedit
-        if isinstance(cmd, Path):
-            cmd = str(cmd)
-        try:
-            if isinstance(cmd, str):
-                args = shlex.split(cmd) if " " in cmd else [cmd]
-                if len(args) == 1:
-                    resolved = shutil.which(args[0])
-                    if resolved:
-                        args[0] = resolved
-            else:
-                args = list(cmd)
-            args.append(str(path_inventory))
-            subprocess.Popen(args)
-            _set_status("Launched JSONEdit for inventory.")
-        except Exception:
-            try:
-                subprocess.Popen(f'"{cmd}" "{path_inventory}"', shell=True)
-                _set_status("Launched JSONEdit for inventory.")
-            except Exception as exc:
-                _set_status(f"JSONEdit launch failed: {exc}")
+        _launch_jsonedit(str(path_inventory), "Launched JSONEdit for inventory.")
 
     def _refresh_inventory_list() -> None:
         inv_path = Path(path_inventory)
         inv_result = core.load_json_file(inv_path)
-        inv_obj = None
         if inv_result.error:
-            inv_obj = {core.INVENTORY_KEY: {}}
+            g["inventory_obj"] = {core.INVENTORY_KEY: {}}
         else:
             inv_top = core.ensure_top_level_object(inv_result.obj)
-            inv_obj = inv_top.obj if inv_top.error is None else {core.INVENTORY_KEY: {}}
-
-        inv_obj = core.ensure_inventory_obj(inv_obj)
-        g["inventory_obj"] = inv_obj
-        inventory_list.delete(0, tk.END)
-        entries = inv_obj.get(core.INVENTORY_KEY, {})
-        g["inventory_ids"] = []
-        for doc_id in entries.keys():
-            inventory_list.insert(tk.END, f"{doc_id}")
-            g["inventory_ids"].append(doc_id)
+            g["inventory_obj"] = (
+                inv_top.obj if inv_top.error is None else {core.INVENTORY_KEY: {}}
+            )
+        _render_inventory_list()
 
     def _on_inventory_select(_event=None) -> None:
         selection = inventory_list.curselection()
@@ -623,7 +639,7 @@ def _build_ui(window: tk.Misc, g: dict[str, Any]) -> None:
             return
         filepath = entry.get("filepath")
         if not filepath:
-            _set_status("LOAD FAILED: inventory entry missing filepath.")
+            set_status("LOAD FAILED: inventory entry missing filepath.")
             return
         path_var.set(filepath)
         g["path_entry_value"] = filepath
@@ -633,11 +649,14 @@ def _build_ui(window: tk.Misc, g: dict[str, Any]) -> None:
         g["root"].bind_all("<Control-s>", lambda _e: on_save())
         g["root"].bind_all("<Control-S>", lambda _e: on_save())
 
-    path_var.trace_add("write", lambda *_: _update_copy_buttons_state())
+    path_var.trace_add("write", lambda *_: None)
 
-    _update_copy_buttons_state()
-    _update_action_buttons_state()
     _refresh_inventory_list()
+    _render_indicators()
+    _render_status()
+    _render_loaded_label()
+    _render_enablement()
+
     inventory_list.bind("<<ListboxSelect>>", _on_inventory_select)
     _bind_shortcuts()
     _validate_header_loop()
