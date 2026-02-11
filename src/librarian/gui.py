@@ -178,7 +178,7 @@ def _build_ui(window: tk.Misc, g: dict[str, Any]) -> None:
         header_text.insert("1.0", text)
 
     def _update_copy_buttons_state() -> None:
-        enabled = bool(path_var.get().strip())
+        enabled = bool(g.get("loaded_path"))
         state = tk.NORMAL if enabled else tk.DISABLED
         copy_path_button.config(state=state)
         copy_tree_button.config(state=state)
@@ -211,6 +211,7 @@ def _build_ui(window: tk.Misc, g: dict[str, Any]) -> None:
             g["loaded_doc_obj"] = None
             g["loaded_path"] = None
             g["loaded_doc_json_error"] = result.error
+            loaded_var.set("Loaded: (none)")
             _set_indicators("INVALID", "NOT_LOADED")
             _set_status(f"LOAD FAILED: {result.error}.")
             return
@@ -219,6 +220,7 @@ def _build_ui(window: tk.Misc, g: dict[str, Any]) -> None:
             g["loaded_doc_obj"] = None
             g["loaded_path"] = None
             g["loaded_doc_json_error"] = top_level.error
+            loaded_var.set("Loaded: (none)")
             _set_indicators("INVALID", "NOT_LOADED")
             _set_status(f"LOAD FAILED: {top_level.error}.")
             return
@@ -226,6 +228,7 @@ def _build_ui(window: tk.Misc, g: dict[str, Any]) -> None:
         g["loaded_doc_obj"] = top_level.obj
         g["loaded_path"] = path
         g["loaded_doc_json_error"] = None
+        loaded_var.set(f"Loaded: {Path(path).name}")
 
         header = core.extract_header(top_level.obj)
         if header is None:
@@ -266,6 +269,9 @@ def _build_ui(window: tk.Misc, g: dict[str, Any]) -> None:
         status_frame, textvariable=status_var, anchor="w", justify=tk.LEFT, fg=COLOR_NEUTRAL
     )
     status_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
+    loaded_var = tk.StringVar(value="Loaded: (none)")
+    loaded_label = tk.Label(status_frame, textvariable=loaded_var, anchor="e")
+    loaded_label.pack(side=tk.RIGHT)
 
     # Header editor
     tk.Label(left_frame, text="Document Header").pack(side=tk.TOP, anchor="w")
@@ -339,6 +345,7 @@ def _build_ui(window: tk.Misc, g: dict[str, Any]) -> None:
         "json_indicator": json_indicator,
         "header_indicator": header_indicator,
         "status_var": status_var,
+        "loaded_var": loaded_var,
         "header_text": header_text,
         "save_checkbox": save_checkbox,
         "save_button": save_button,
@@ -446,10 +453,6 @@ def _build_ui(window: tk.Misc, g: dict[str, Any]) -> None:
         else:
             _set_status("SAVED: wrote document header to file (pretty).")
         _update_action_buttons_state()
-
-    def _bind_shortcuts() -> None:
-        g["root"].bind_all("<Control-s>", lambda _e: on_save())
-        g["root"].bind_all("<Control-S>", lambda _e: on_save())
 
     def on_index() -> None:
         if not g["loaded_path"]:
@@ -624,8 +627,11 @@ def _build_ui(window: tk.Misc, g: dict[str, Any]) -> None:
             return
         path_var.set(filepath)
         g["path_entry_value"] = filepath
-        _update_copy_buttons_state()
         on_load()
+
+    def _bind_shortcuts() -> None:
+        g["root"].bind_all("<Control-s>", lambda _e: on_save())
+        g["root"].bind_all("<Control-S>", lambda _e: on_save())
 
     path_var.trace_add("write", lambda *_: _update_copy_buttons_state())
 

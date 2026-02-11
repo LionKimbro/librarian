@@ -70,6 +70,10 @@ def _indicator_text(name: str) -> str:
     state = _require_state()
     return state["widgets"][name].cget("text")
 
+def _button_state(name: str) -> str:
+    state = _require_state()
+    return state["widgets"][name].cget("state")
+
 
 def _set_header_text(text: str) -> None:
     state = _require_state()
@@ -182,4 +186,63 @@ add_test(
 add_test(
     "Edit header text to invalid JSON",
     [step_setup_header_edit, step_load_for_edit, step_edit_header_invalid, step_assert_header_invalid],
+)
+
+
+def step_setup_button_doc():
+    tmp = tempfile.TemporaryDirectory()
+    T["tmp"] = tmp
+    doc_path = Path(tmp.name) / "doc.json"
+    _make_doc(doc_path, {"document_id": "tk.test.buttons"})
+    T["doc_path"] = str(doc_path)
+    return "next", None
+
+
+def step_assert_buttons_initial_disabled():
+    if _button_state("save_button") != "disabled":
+        return "fail", "save_button should be disabled before load"
+    if _button_state("index_button") != "disabled":
+        return "fail", "index_button should be disabled before load"
+    if _button_state("copy_path_button") != "disabled":
+        return "fail", "copy_path_button should be disabled before load"
+    if _button_state("copy_tree_button") != "disabled":
+        return "fail", "copy_tree_button should be disabled before load"
+    if _button_state("copy_tree_comp_button") != "disabled":
+        return "fail", "copy_tree_comp_button should be disabled before load"
+    if _button_state("jsonedit_button") != "disabled":
+        return "fail", "jsonedit_button should be disabled before load"
+    return "next", None
+
+
+def step_load_for_buttons():
+    _set_path(T["doc_path"])
+    _load_click()
+    return "next", 800
+
+
+def step_assert_buttons_after_load():
+    if _button_state("save_button") != "normal":
+        return "fail", "save_button should be enabled after valid load"
+    if _button_state("index_button") != "normal":
+        return "fail", "index_button should be enabled after valid load"
+    if _button_state("copy_path_button") != "normal":
+        return "fail", "copy_path_button should be enabled after load"
+    if _button_state("copy_tree_button") != "normal":
+        return "fail", "copy_tree_button should be enabled after load"
+    if _button_state("copy_tree_comp_button") != "normal":
+        return "fail", "copy_tree_comp_button should be enabled after load"
+    if _button_state("jsonedit_button") != "normal":
+        return "fail", "jsonedit_button should be enabled after load"
+    T["tmp"].cleanup()
+    return "success", None
+
+
+add_test(
+    "Buttons enable/disable based on load state",
+    [
+        step_setup_button_doc,
+        step_assert_buttons_initial_disabled,
+        step_load_for_buttons,
+        step_assert_buttons_after_load,
+    ],
 )
