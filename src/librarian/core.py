@@ -13,7 +13,7 @@ from typing import Any, Iterable
 DOCUMENT_KEY = "document"
 INVENTORY_KEY = "inventory"
 
-REQUIRED_HEADER_KEYS = ["document_id"]
+REQUIRED_HEADER_KEYS = ["document-id"]
 RECOMMENDED_HEADER_KEYS = ["title", "purpose"]
 
 
@@ -64,11 +64,21 @@ def extract_header(doc_obj: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def normalize_header(header_obj: dict[str, Any] | None) -> dict[str, Any]:
-    """Ensure required/recommended keys exist with empty-string defaults."""
+    """Ensure required/recommended keys exist with empty-string defaults.
+
+    Remaps legacy ``document_id`` to the canonical ``document-id`` key.
+    """
     if header_obj is None:
         header_obj = {}
     if not isinstance(header_obj, dict):
         raise ValueError("document header must be a JSON object")
+
+    # Accept legacy underscore form; always output canonical hyphenated form.
+    if "document_id" in header_obj:
+        if "document-id" not in header_obj:
+            header_obj["document-id"] = header_obj.pop("document_id")
+        else:
+            del header_obj["document_id"]
 
     for key in REQUIRED_HEADER_KEYS + RECOMMENDED_HEADER_KEYS:
         if key not in header_obj:
@@ -82,9 +92,9 @@ def is_valid_document_id(value: Any) -> bool:
 
 def validate_header_required(header_obj: dict[str, Any]) -> ParseResult:
     """Validate required header keys; returns ParseResult with error when invalid."""
-    doc_id = header_obj.get("document_id")
+    doc_id = header_obj.get("document-id")
     if not is_valid_document_id(doc_id):
-        return ParseResult(None, "document_id missing or empty")
+        return ParseResult(None, "document-id missing or empty")
     return ParseResult(header_obj, None)
 
 
@@ -141,7 +151,7 @@ def update_inventory_entry(
     """Return inventory object updated with the given document data."""
     inv_obj = ensure_inventory_obj(inv_obj)
     entry: dict[str, Any] = {
-        "document_id": document_id,
+        "document-id": document_id,
         "filepath": filepath,
     }
     if title is not None:
@@ -247,7 +257,7 @@ def derive_inventory_fields(
 ) -> dict[str, Any]:
     """Derive inventory fields from a header object."""
     return {
-        "document_id": header_obj.get("document_id", ""),
+        "document-id": header_obj.get("document-id", ""),
         "filepath": filepath,
         "title": header_obj.get("title"),
         "purpose": header_obj.get("purpose"),

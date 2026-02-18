@@ -1,6 +1,6 @@
 {
   "document": {
-    "document_id": "librarian.spec.v0.1",
+    "document-id": "librarian.spec.v0.1",
     "title": "Librarian Program Specification",
     "version": "0.1",
     "status": "implementable",
@@ -46,7 +46,7 @@
   "header_contract": {
     "top_level_key": "document",
     "required_keys": [
-      "document_id"
+      "document-id"
     ],
     "recommended_keys": [
       "title",
@@ -54,25 +54,26 @@
     ],
     "allowed_additional_keys": true,
     "key_types": {
-      "document_id": "string",
+      "document-id": "string",
       "title": "string",
       "purpose": "string"
     },
     "normalization": {
       "when_missing_document_section": "Create an in-memory stub header object and display it in the header editor; do not write to disk until Save is clicked.",
       "when_missing_required_or_recommended_keys": "Populate missing keys in-memory with empty string values before displaying in header editor.",
-      "document_id_empty_string": "Treated as missing for Save/Index enablement checks.",
+      "remap_legacy_document_id": "If the header contains key document_id but not document-id, rename it to document-id immediately after loading. If both are present, drop document_id.",
+      "document-id-empty-string": "Treated as missing for Save/Index enablement checks.",
       "preserve_unknown_header_keys": "If document header contains additional keys, keep them as-is when saving and indexing."
     }
   },
   "inventory_contract": {
     "inventory_filename_default": "inventory.json",
     "top_level_key": "inventory",
-    "entry_key": "document_id",
+    "entry_key": "document-id",
     "entry_fields": {
-      "document_id": {
+      "document-id": {
         "type": "string",
-        "source": "document_header.document_id",
+        "source": "document_header.document-id",
         "required": true
       },
       "filepath": {
@@ -92,7 +93,7 @@
       }
     },
     "update_policy": {
-      "on_index": "Overwrite the existing entry for document_id with newly derived values.",
+      "on_index": "Overwrite the existing entry for document-id with newly derived values.",
       "no_manual_inventory_editing_in_gui": true,
       "inventory_is_derived": "Inventory entries are derived from document headers and filepaths at time of indexing."
     },
@@ -221,7 +222,7 @@
           "enabled_when": [
             "A document is loaded and parsed",
             "Header editor JSON is valid object",
-            "Header has required document_id non-empty string"
+            "Header has required document-id non-empty string"
           ],
           "action": "Insert or replace top-level document header and rewrite the document file using selected formatting."
         },
@@ -229,16 +230,16 @@
           "label": "Index Document",
           "enabled_when": [
             "A document is loaded and parsed",
-            "The on-disk document contains a valid header with required document_id (or the in-memory header is valid AND policy permits indexing without saving)"
+            "The on-disk document contains a valid header with required document-id (or the in-memory header is valid AND policy permits indexing without saving)"
           ],
           "default_policy": "Index reads from disk; therefore indexing should typically occur after Save if user changed the header.",
-          "action": "Load document from disk; extract header; update inventory.json entry for document_id."
+          "action": "Load document from disk; extract header; update inventory.json entry for document-id."
         }
       },
       "inventory_view": {
         "type": "Listbox",
         "label": "Inventory",
-        "content": "Shows current inventory entries as 'document_id  |  title' (title blank allowed).",
+        "content": "Shows current inventory entries as 'document-id  |  title' (title blank allowed).",
         "selection_behavior": "Optional in v0.1; may be read-only."
       },
       "utility_buttons": {
@@ -300,7 +301,7 @@
       "behavior": [
         "Load inventory.json (create if missing with {\"inventory\": {}}).",
         "Load document from disk, parse, extract header.",
-        "Update inventory[document_id] with derived fields.",
+        "Update inventory[document-id] with derived fields.",
         "Write inventory.json pretty printed indent=2."
       ]
     }
@@ -361,7 +362,7 @@
       "definition": "Header editor text parses to a JSON object."
     },
     "header_required_keys": {
-      "document_id": {
+      "document-id": {
         "must_exist": true,
         "type": "string",
         "non_empty": true
@@ -379,8 +380,8 @@
     }
   },
   "enablement_policy": {
-    "save_button": "Enabled iff header_editor_valid and document_id is valid and a document is loaded.",
-    "index_button": "Enabled iff on-disk document has valid header with valid document_id (default v0.1 behavior).",
+    "save_button": "Enabled iff header_editor_valid and document-id is valid and a document is loaded.",
+    "index_button": "Enabled iff on-disk document has valid header with valid document-id (default v0.1 behavior).",
     "jsonedit_button": "Enabled iff Path Entry non-empty.",
     "copy_buttons": "Enabled iff Path Entry non-empty."
   },
@@ -391,7 +392,7 @@
       "LOAD FAILED: file not found.",
       "LOAD FAILED: invalid JSON at line 12 column 5: Expecting ',' delimiter.",
       "HEADER MISSING: stub header created (not saved).",
-      "HEADER INVALID: document_id missing or empty.",
+      "HEADER INVALID: document-id missing or empty.",
       "READY: header valid. You may Save or Index.",
       "SAVED: wrote document header to file (pretty).",
       "SAVED: wrote document header to file (compressed).",
@@ -410,7 +411,7 @@
         "Saving pretty uses indent=2",
         "Saving compressed uses separators (',', ':')",
         "Index creates inventory.json if missing",
-        "Index overwrites existing inventory entry for same document_id",
+        "Index overwrites existing inventory entry for same document-id",
         "Copy tree functions produce deterministic output given a fixture tree"
       ]
     },
@@ -421,7 +422,7 @@
         "Path entry set -> Load -> indicators reflect valid JSON and header present",
         "Load invalid JSON -> JSON indicator INVALID and status has parse error",
         "Edit header text to invalid JSON -> header validation shows INVALID within 1s",
-        "Edit header text to missing document_id -> Save disabled, status warns",
+        "Edit header text to missing document-id -> Save disabled, status warns",
         "Save pretty -> file rewritten with indent=2",
         "Save compressed -> file rewritten compact",
         "Index -> inventory.json updated and inventory list refreshed",

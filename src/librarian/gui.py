@@ -304,7 +304,7 @@ def _build_ui(window: tk.Misc, g: dict[str, Any]) -> None:
         doc_id_ok = False
         if header_valid:
             doc_id_ok = core.is_valid_document_id(
-                g["header_text_last_valid_obj"].get("document_id")
+                g["header_text_last_valid_obj"].get("document-id")
             )
         save_enabled = bool(g["loaded_doc_obj"]) and header_valid and doc_id_ok
         save_button.config(state=tk.NORMAL if save_enabled else tk.DISABLED)
@@ -413,7 +413,7 @@ def _build_ui(window: tk.Misc, g: dict[str, Any]) -> None:
             header_valid = core.validate_header_required(header)
             g["loaded_disk_header_valid"] = header_valid.error is None
             if header_valid.error:
-                set_status("HEADER INVALID: document_id missing or empty.")
+                set_status("HEADER INVALID: document-id missing or empty.")
             else:
                 set_status("READY: header valid. You may Save or Index.")
 
@@ -452,7 +452,7 @@ def _build_ui(window: tk.Misc, g: dict[str, Any]) -> None:
 
         required = core.validate_header_required(parsed.obj)
         if required.error:
-            set_status("HEADER INVALID: document_id missing or empty.")
+            set_status("HEADER INVALID: document-id missing or empty.")
         else:
             missing_recommended = [
                 key for key in core.RECOMMENDED_HEADER_KEYS if key not in parsed.obj
@@ -480,7 +480,7 @@ def _build_ui(window: tk.Misc, g: dict[str, Any]) -> None:
             return
         required = core.validate_header_required(header_obj)
         if required.error:
-            set_status("HEADER INVALID: document_id missing or empty.")
+            set_status("HEADER INVALID: document-id missing or empty.")
             return
 
         updated_doc = core.update_document_header(g["loaded_doc_obj"], header_obj)
@@ -508,12 +508,12 @@ def _build_ui(window: tk.Misc, g: dict[str, Any]) -> None:
             return
         header = core.extract_header(top_level.obj)
         if header is None:
-            set_status("HEADER INVALID: document_id missing or empty.")
+            set_status("HEADER INVALID: document-id missing or empty.")
             return
         header = core.normalize_header(header)
         required = core.validate_header_required(header)
         if required.error:
-            set_status("HEADER INVALID: document_id missing or empty.")
+            set_status("HEADER INVALID: document-id missing or empty.")
             return
 
         inv_path = Path(path_inventory)
@@ -527,7 +527,7 @@ def _build_ui(window: tk.Misc, g: dict[str, Any]) -> None:
 
         inv_obj = core.update_inventory_entry(
             inv_obj,
-            header["document_id"],
+            header["document-id"],
             str(g["loaded_path"]),
             header.get("title"),
             header.get("purpose"),
@@ -536,7 +536,7 @@ def _build_ui(window: tk.Misc, g: dict[str, Any]) -> None:
         core.atomic_write_text(inv_path, inv_text)
         g["inventory_obj"] = inv_obj
         _render_inventory_list()
-        set_status(f"INDEXED: updated inventory.json entry for {header['document_id']}")
+        set_status(f"INDEXED: updated inventory.json entry for {header['document-id']}")
 
     def on_copy_path() -> None:
         path = g.get("loaded_path")

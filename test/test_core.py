@@ -27,22 +27,24 @@ def test_ensure_top_level_object():
 
 
 def test_extract_and_normalize_header():
+    # Input uses legacy document_id key; should be remapped to document-id.
     doc = {"document": {"document_id": "abc"}}
     header = core.extract_header(doc)
     normalized = core.normalize_header(header)
-    assert normalized["document_id"] == "abc"
+    assert normalized["document-id"] == "abc"
+    assert "document_id" not in normalized
     assert "title" in normalized
     assert "purpose" in normalized
 
     normalized2 = core.normalize_header(None)
-    assert normalized2["document_id"] == ""
+    assert normalized2["document-id"] == ""
 
 
 def test_validate_header_required():
-    bad = core.validate_header_required({"document_id": ""})
-    assert bad.error == "document_id missing or empty"
+    bad = core.validate_header_required({"document-id": ""})
+    assert bad.error == "document-id missing or empty"
 
-    ok = core.validate_header_required({"document_id": "x"})
+    ok = core.validate_header_required({"document-id": "x"})
     assert ok.error is None
 
 
@@ -58,7 +60,7 @@ def test_format_json_pretty_and_compact():
 
 def test_update_document_header():
     doc = {"x": 1, "y": 2}
-    header = {"document_id": "d"}
+    header = {"document-id": "d"}
     updated = core.update_document_header(doc, header)
     assert updated["x"] == 1
     assert updated["document"] == header
