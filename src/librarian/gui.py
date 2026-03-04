@@ -207,6 +207,8 @@ def _build_ui(window: tk.Misc, g: dict[str, Any]) -> None:
     # Utility buttons (same row as Save/Index)
     copy_path_button = tk.Button(action_frame, text="Copy Path", command=lambda: on_copy_path())
     copy_path_button.pack(side=tk.LEFT, padx=(0, 6))
+    open_folder_button = tk.Button(action_frame, text="Open Folder", command=lambda: on_open_folder())
+    open_folder_button.pack(side=tk.LEFT, padx=(0, 6))
     copy_tree_button = tk.Button(action_frame, text="Copy JSON", command=lambda: on_copy_tree(False))
     copy_tree_button.pack(side=tk.LEFT, padx=(0, 6))
     copy_tree_comp_button = tk.Button(
@@ -251,6 +253,7 @@ def _build_ui(window: tk.Misc, g: dict[str, Any]) -> None:
         "index_button": index_button,
         "inventory_list": inventory_list,
         "copy_path_button": copy_path_button,
+        "open_folder_button": open_folder_button,
         "copy_tree_button": copy_tree_button,
         "copy_tree_comp_button": copy_tree_comp_button,
         "jsonedit_button": jsonedit_button,
@@ -315,6 +318,7 @@ def _build_ui(window: tk.Misc, g: dict[str, Any]) -> None:
         doc_tools_enabled = bool(g.get("loaded_path"))
         state = tk.NORMAL if doc_tools_enabled else tk.DISABLED
         copy_path_button.config(state=state)
+        open_folder_button.config(state=state)
         copy_tree_button.config(state=state)
         copy_tree_comp_button.config(state=state)
         jsonedit_button.config(state=state)
@@ -544,6 +548,13 @@ def _build_ui(window: tk.Misc, g: dict[str, Any]) -> None:
             return
         pyperclip.copy(str(path))
         set_status("Copied path to clipboard.")
+
+    def on_open_folder() -> None:
+        path = g.get("loaded_path")
+        if not path:
+            return
+        subprocess.Popen(["explorer", f"/select,{Path(path).resolve()}"])
+        set_status("Opened folder in Explorer.")
 
     def on_copy_tree(compressed: bool) -> None:
         path = g.get("loaded_path")
