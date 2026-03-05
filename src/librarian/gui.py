@@ -6,6 +6,7 @@ import json
 import shutil
 import shlex
 import subprocess
+import time
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +24,7 @@ except Exception:  # pragma: no cover - optional for direct execution
 
 
 VALIDATION_INTERVAL_MS = 750
+INBOX_POLL_MS = 200
 
 COLOR_GOOD = "#1a7f37"
 COLOR_BAD = "#d1242f"
@@ -69,6 +71,8 @@ def create_app(window: tk.Misc, root: tk.Misc | None = None) -> dict[str, Any]:
     g["window"] = window
     g["path_inventory"] = _ctx_value("path.inventory", "inventory.json")
     g["path_jsonedit"] = _ctx_value("invoke.jsonedit", "jsonedit")
+    g["path_inbox"] = _ctx_value("path.inbox", "inbox")
+    g["path_outbox"] = _ctx_value("path.outbox", "outbox")
     _build_ui(window, g)
     return g
 
@@ -96,12 +100,14 @@ def app_exit() -> None:
         except Exception:
             pass
     if APP_G is not None:
-        after_id = APP_G.get("validation_after_id")
-        if after_id and APP_G.get("root") is not None:
-            try:
-                APP_G["root"].after_cancel(after_id)
-            except Exception:
-                pass
+        root = APP_G.get("root")
+        for key in ("validation_after_id", "inbox_after_id"):
+            after_id = APP_G.get(key)
+            if after_id and root is not None:
+                try:
+                    root.after_cancel(after_id)
+                except Exception:
+                    pass
     APP_WINDOW = None
     APP_G = None
 
@@ -125,6 +131,8 @@ def _build_ui(window: tk.Misc, g: dict[str, Any]) -> None:
 
     path_inventory = g["path_inventory"]
     path_jsonedit = g["path_jsonedit"]
+    path_inbox = g["path_inbox"]
+    path_outbox = g["path_outbox"]
 
     path_var = tk.StringVar(value="")
     save_compressed_var = tk.BooleanVar(value=False)
@@ -188,13 +196,31 @@ def _build_ui(window: tk.Misc, g: dict[str, Any]) -> None:
     )
     save_checkbox.pack(side=tk.LEFT)
 
-    # Action buttons (document actions + utilities)
+    # Action buttons - document section, two rows
     action_frame = tk.Frame(left_frame)
     action_frame.pack(side=tk.TOP, fill=tk.X, pady=6)
-    save_button = tk.Button(action_frame, text="Save to Document", command=lambda: on_save())
+    action_row1 = tk.Frame(action_frame)
+    action_row1.pack(side=tk.TOP, fill=tk.X)
+    action_row2 = tk.Frame(action_frame)
+    action_row2.pack(side=tk.TOP, fill=tk.X, pady=(2, 0))
+
+    save_button = tk.Button(action_row1, text="Save to Document", command=lambda: on_save())
     save_button.pack(side=tk.LEFT, padx=(0, 6))
-    index_button = tk.Button(action_frame, text="Index Document", command=lambda: on_index())
+    index_button = tk.Button(action_row1, text="Index Document", command=lambda: on_index())
     index_button.pack(side=tk.LEFT, padx=(0, 12))
+    copy_tree_button = tk.Button(action_row1, text="Copy JSON", command=lambda: on_copy_tree(False))
+    copy_tree_button.pack(side=tk.LEFT, padx=(0, 6))
+    copy_tree_comp_button = tk.Button(action_row1, text="(min)", command=lambda: on_copy_tree(True))
+    copy_tree_comp_button.pack(side=tk.LEFT, padx=(0, 6))
+    jsonedit_button = tk.Button(action_row1, text="JSONEdit", command=lambda: on_jsonedit())
+    jsonedit_button.pack(side=tk.LEFT)
+
+    copy_path_button = tk.Button(action_row2, text="Copy Path", command=lambda: on_copy_path())
+    copy_path_button.pack(side=tk.LEFT, padx=(0, 6))
+    open_folder_button = tk.Button(action_row2, text="Open Folder", command=lambda: on_open_folder())
+    open_folder_button.pack(side=tk.LEFT, padx=(0, 6))
+    emit_path_button = tk.Button(action_row2, text="Emit: Path", command=lambda: on_emit_path())
+    emit_path_button.pack(side=tk.LEFT, padx=(0, 6))
 
     # Inventory view
     tk.Label(right_frame, text="Inventory").pack(side=tk.TOP, anchor="w")
@@ -203,41 +229,26 @@ def _build_ui(window: tk.Misc, g: dict[str, Any]) -> None:
 
     inventory_buttons = tk.Frame(right_frame)
     inventory_buttons.pack(side=tk.TOP, fill=tk.X, pady=6)
+    inv_row1 = tk.Frame(inventory_buttons)
+    inv_row1.pack(side=tk.TOP, fill=tk.X)
+    inv_row2 = tk.Frame(inventory_buttons)
+    inv_row2.pack(side=tk.TOP, fill=tk.X, pady=(2, 0))
 
-    # Utility buttons (same row as Save/Index)
-    copy_path_button = tk.Button(action_frame, text="Copy Path", command=lambda: on_copy_path())
-    copy_path_button.pack(side=tk.LEFT, padx=(0, 6))
-    open_folder_button = tk.Button(action_frame, text="Open Folder", command=lambda: on_open_folder())
-    open_folder_button.pack(side=tk.LEFT, padx=(0, 6))
-    copy_tree_button = tk.Button(action_frame, text="Copy JSON", command=lambda: on_copy_tree(False))
-    copy_tree_button.pack(side=tk.LEFT, padx=(0, 6))
-    copy_tree_comp_button = tk.Button(
-        action_frame, text="Copy JSON (min)", command=lambda: on_copy_tree(True)
-    )
-    copy_tree_comp_button.pack(side=tk.LEFT, padx=(0, 6))
-    jsonedit_button = tk.Button(action_frame, text="JSONEdit", command=lambda: on_jsonedit())
-    jsonedit_button.pack(side=tk.LEFT)
-
-    inv_reload_button = tk.Button(
-        inventory_buttons, text="Reload", command=lambda: on_inventory_reload()
-    )
+    inv_reload_button = tk.Button(inv_row1, text="Reload", command=lambda: on_inventory_reload())
     inv_reload_button.pack(side=tk.LEFT, padx=(0, 6))
-    inv_copy_path_button = tk.Button(
-        inventory_buttons, text="Copy Path", command=lambda: on_inventory_copy_path()
-    )
-    inv_copy_path_button.pack(side=tk.LEFT, padx=(0, 6))
-    inv_copy_json_button = tk.Button(
-        inventory_buttons, text="Copy JSON", command=lambda: on_inventory_copy_json(False)
-    )
+    inv_copy_json_button = tk.Button(inv_row1, text="Copy JSON", command=lambda: on_inventory_copy_json(False))
     inv_copy_json_button.pack(side=tk.LEFT, padx=(0, 6))
-    inv_copy_json_min_button = tk.Button(
-        inventory_buttons, text="(min)", command=lambda: on_inventory_copy_json(True)
-    )
+    inv_copy_json_min_button = tk.Button(inv_row1, text="(min)", command=lambda: on_inventory_copy_json(True))
     inv_copy_json_min_button.pack(side=tk.LEFT, padx=(0, 6))
-    inv_treeedit_button = tk.Button(
-        inventory_buttons, text="TreeEdit", command=lambda: on_inventory_treeedit()
-    )
-    inv_treeedit_button.pack(side=tk.LEFT)
+    inv_jsonedit_button = tk.Button(inv_row1, text="JSONEdit", command=lambda: on_inventory_treeedit())
+    inv_jsonedit_button.pack(side=tk.LEFT)
+
+    inv_copy_path_button = tk.Button(inv_row2, text="Copy Path", command=lambda: on_inventory_copy_path())
+    inv_copy_path_button.pack(side=tk.LEFT, padx=(0, 6))
+    inv_open_folder_button = tk.Button(inv_row2, text="Open Folder", command=lambda: on_inventory_open_folder())
+    inv_open_folder_button.pack(side=tk.LEFT, padx=(0, 6))
+    inv_emit_path_button = tk.Button(inv_row2, text="Emit: Path", command=lambda: on_inventory_emit_path())
+    inv_emit_path_button.pack(side=tk.LEFT, padx=(0, 6))
 
     g["widgets"] = {
         "path_entry": path_entry,
@@ -257,11 +268,14 @@ def _build_ui(window: tk.Misc, g: dict[str, Any]) -> None:
         "copy_tree_button": copy_tree_button,
         "copy_tree_comp_button": copy_tree_comp_button,
         "jsonedit_button": jsonedit_button,
+        "emit_path_button": emit_path_button,
         "inv_reload_button": inv_reload_button,
-        "inv_copy_path_button": inv_copy_path_button,
         "inv_copy_json_button": inv_copy_json_button,
         "inv_copy_json_min_button": inv_copy_json_min_button,
-        "inv_treeedit_button": inv_treeedit_button,
+        "inv_jsonedit_button": inv_jsonedit_button,
+        "inv_copy_path_button": inv_copy_path_button,
+        "inv_open_folder_button": inv_open_folder_button,
+        "inv_emit_path_button": inv_emit_path_button,
     }
 
     g["vars"] = {
@@ -322,6 +336,7 @@ def _build_ui(window: tk.Misc, g: dict[str, Any]) -> None:
         copy_tree_button.config(state=state)
         copy_tree_comp_button.config(state=state)
         jsonedit_button.config(state=state)
+        emit_path_button.config(state=state)
 
     def _render_inventory_list() -> None:
         inv_obj = g.get("inventory_obj")
@@ -609,6 +624,53 @@ def _build_ui(window: tk.Misc, g: dict[str, Any]) -> None:
         _refresh_inventory_list()
         set_status("Reloaded inventory.")
 
+    def on_inventory_open_folder() -> None:
+        path = Path(path_inventory).resolve()
+        subprocess.Popen(["explorer", f"/select,{path}"])
+        set_status("Opened inventory folder in Explorer.")
+
+    def _write_outbox_message(channel: str, signal: Any) -> None:
+        outbox = Path(path_outbox)
+        outbox.mkdir(parents=True, exist_ok=True)
+        ts = time.time()
+        msg = {"channel": channel, "signal": signal, "timestamp": str(ts)}
+        filename = f"patchboard_{int(ts * 1000000)}.json"
+        text = json.dumps(msg, indent=2, ensure_ascii=False) + "\n"
+        (outbox / filename).write_text(text, encoding="utf-8")
+
+    def on_emit_path() -> None:
+        path = g.get("loaded_path")
+        if not path:
+            return
+        _write_outbox_message("path", str(path))
+        set_status("Emitted path to outbox.")
+
+    def on_inventory_emit_path() -> None:
+        _write_outbox_message("path", str(path_inventory))
+        set_status("Emitted inventory path to outbox.")
+
+    def _poll_inbox() -> None:
+        if not window.winfo_exists():
+            return
+        inbox = Path(path_inbox)
+        if inbox.is_dir():
+            for msg_file in sorted(inbox.glob("*.json")):
+                try:
+                    data = json.loads(msg_file.read_text(encoding="utf-8"))
+                except Exception:
+                    continue  # incomplete write, retry next poll
+                try:
+                    msg_file.unlink()
+                except Exception:
+                    pass
+                channel = data.get("channel")
+                signal = data.get("signal")
+                if channel == "path" and signal:
+                    path_var.set(str(signal))
+                    g["path_entry_value"] = str(signal)
+                    on_load()
+        g["inbox_after_id"] = g["root"].after(INBOX_POLL_MS, _poll_inbox)
+
     def on_inventory_copy_json(compressed: bool) -> None:
         inv_result = core.load_json_file(path_inventory)
         if inv_result.error:
@@ -662,6 +724,9 @@ def _build_ui(window: tk.Misc, g: dict[str, Any]) -> None:
 
     path_var.trace_add("write", lambda *_: None)
 
+    Path(path_inbox).mkdir(parents=True, exist_ok=True)
+    Path(path_outbox).mkdir(parents=True, exist_ok=True)
+
     _refresh_inventory_list()
     _render_indicators()
     _render_status()
@@ -671,3 +736,4 @@ def _build_ui(window: tk.Misc, g: dict[str, Any]) -> None:
     inventory_list.bind("<<ListboxSelect>>", _on_inventory_select)
     _bind_shortcuts()
     _validate_header_loop()
+    _poll_inbox()

@@ -16,6 +16,12 @@ def _declare_app():
     app.declare_key("invoke.jsonedit", "jsonedit")
     app.describe_key("invoke.jsonedit", "Command or path used to launch JSONEdit.")
 
+    app.declare_key("path.inbox", ".librarian/inbox")
+    app.describe_key("path.inbox", "Directory to poll for incoming Patchboard messages.")
+
+    app.declare_key("path.outbox", ".librarian/outbox")
+    app.describe_key("path.outbox", "Directory to write outgoing Patchboard messages.")
+
     app.declare_cmd("", gui_main)
     app.describe_cmd("", "Launch the Librarian GUI.")
 
