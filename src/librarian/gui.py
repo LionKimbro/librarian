@@ -73,6 +73,7 @@ def create_app(window: tk.Misc, root: tk.Misc | None = None) -> dict[str, Any]:
     g["path_jsonedit"] = _ctx_value("invoke.jsonedit", "jsonedit")
     g["path_inbox"] = _ctx_value("path.inbox", "inbox")
     g["path_outbox"] = _ctx_value("path.outbox", "outbox")
+    g["component_title"] = _ctx_value("component.title", "Librarian")
     _build_ui(window, g)
     return g
 
@@ -129,10 +130,23 @@ def _build_ui(window: tk.Misc, g: dict[str, Any]) -> None:
     except Exception:
         pass
 
+    menubar = tk.Menu(window)
+    file_menu = tk.Menu(menubar, tearoff=0)
+    file_menu.add_command(label="Quit", underline=0, command=lambda: window.quit())
+    menubar.add_cascade(label="File", underline=0, menu=file_menu)
+    patchboard_menu = tk.Menu(menubar, tearoff=0)
+    patchboard_menu.add_command(label="Emit Component ID Card", underline=0, command=lambda: on_emit_component_id_card())
+    menubar.add_cascade(label="Patchboard", underline=0, menu=patchboard_menu)
+    try:
+        window.config(menu=menubar)
+    except Exception:
+        pass
+
     path_inventory = g["path_inventory"]
     path_jsonedit = g["path_jsonedit"]
     path_inbox = g["path_inbox"]
     path_outbox = g["path_outbox"]
+    component_title = g["component_title"]
 
     path_var = tk.StringVar(value="")
     save_compressed_var = tk.BooleanVar(value=False)
@@ -648,6 +662,20 @@ def _build_ui(window: tk.Misc, g: dict[str, Any]) -> None:
     def on_inventory_emit_path() -> None:
         _write_outbox_message("path", str(path_inventory))
         set_status("Emitted inventory path to outbox.")
+
+    def on_emit_component_id_card() -> None:
+        card = {
+            "schema_version": 1,
+            "title": component_title,
+            "inbox": str(Path(path_inbox).resolve()),
+            "outbox": str(Path(path_outbox).resolve()),
+            "channels": {
+                "in": ["path"],
+                "out": ["path", "component-id-card"],
+            },
+        }
+        _write_outbox_message("component-id-card", card)
+        set_status("Emitted Component ID Card to outbox.")
 
     def _poll_inbox() -> None:
         if not window.winfo_exists():

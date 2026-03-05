@@ -22,6 +22,9 @@ def _declare_app():
     app.declare_key("path.outbox", ".librarian/outbox")
     app.describe_key("path.outbox", "Directory to write outgoing Patchboard messages.")
 
+    app.declare_key("component.title", "Librarian")
+    app.describe_key("component.title", "Title used in the emitted Patchboard Component ID Card.")
+
     app.declare_cmd("", gui_main)
     app.describe_cmd("", "Launch the Librarian GUI.")
 
